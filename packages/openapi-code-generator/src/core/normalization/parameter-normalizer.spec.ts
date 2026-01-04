@@ -5,9 +5,11 @@ import type {Parameter} from "../openapi-types"
 import {defaultSyntheticNameGenerator} from "../synthetic-name-generator"
 import {ParameterNormalizer} from "./parameter-normalizer"
 import {SchemaNormalizer} from "./schema-normalizer"
+import { FakeSchemaProvider } from "../../test/fake-schema-provider"
 
 describe("ParameterNormalizer", () => {
   let loader: jest.Mocked<OpenapiLoader>
+  let fakeSchemaProvider: FakeSchemaProvider
   let schemaNormalizer: SchemaNormalizer
   let parameterNormalizer: ParameterNormalizer
 
@@ -18,10 +20,12 @@ describe("ParameterNormalizer", () => {
       addVirtualType: jest.fn(),
     } as unknown as jest.Mocked<OpenapiLoader>
 
+    fakeSchemaProvider = new FakeSchemaProvider()
+
     schemaNormalizer = new SchemaNormalizer({
       extractInlineSchemas: true,
       enumExtensibility: "open",
-    })
+    }, fakeSchemaProvider)
 
     parameterNormalizer = new ParameterNormalizer(
       loader,

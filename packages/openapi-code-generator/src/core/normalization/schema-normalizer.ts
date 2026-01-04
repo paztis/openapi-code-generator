@@ -1,6 +1,6 @@
 import {isNonEmptyArray} from "@nahkies/typescript-common-runtime/types"
 import {generationLib} from "../generation-lib"
-import type {InputConfig} from "../input"
+import type {InputConfig, ISchemaProvider} from "../input"
 import {logger} from "../logger"
 import type {
   Discriminator,
@@ -25,10 +25,13 @@ import type {
   IRRef,
   MaybeIRModel,
 } from "../openapi-types-normalized"
-import {isRef} from "../openapi-utils"
+import {getRawNameFromRef, isRef} from "../openapi-utils"
 
 export class SchemaNormalizer {
-  constructor(readonly config: InputConfig) {}
+  constructor(
+    private readonly config: InputConfig,
+    private readonly schemaProvider: ISchemaProvider,
+  ) {}
 
   public isNormalized(schema: Schema | IRModel): schema is IRModel {
     return schema && Reflect.get(schema, "isIRModel")
@@ -382,21 +385,46 @@ export class SchemaNormalizer {
 
   private normalizeDiscriminator(
     discriminator: Discriminator | undefined,
+    schemas: MaybeIRModel[],
   ): IRModelUnion["discriminator"] | undefined {
     if (!discriminator) {
       return undefined
     }
 
-    if (!discriminator.mapping) {
-      // todo: cna we support this if the discriminated property is an enum of one element?
-      logger.warn("discriminators without a mapping are ignored.")
+    const referencedSchemas = schemas.filter((it) => isRef(it))
+
+    const includesInlineSchemas = referencedSchemas.length !== schemas.length
+
+    if (includesInlineSchemas) {
+      logger.info(
+        `ignoring 'discriminator' over propertyName '${discriminator.propertyName}' as the union includes inline schemas`,
+      )
       return undefined
     }
+
+    // todo: infinite loop possibility? might make more sense to go to the loader.
+    const everyAlternativeIsObject = referencedSchemas.every(
+      (it) => this.schemaProvider.schema(it).type === "object",
+    )
+
+    if (!everyAlternativeIsObject) {
+      logger.info(
+        `ignoring 'discriminator' over propertyName '${discriminator.propertyName}' as the union references non-object schemas`,
+      )
+      return undefined
+    }
+
+    // note: mapping is optional, where the default is ${NAME} -> '#/components/schemas/${NAME}'
+    const mapping =
+      discriminator.mapping ??
+      Object.fromEntries(
+        referencedSchemas.map((it) => [getRawNameFromRef(it), it.$ref]),
+      )
 
     return {
       propertyName: discriminator.propertyName,
       mapping: Object.fromEntries(
-        Object.entries(discriminator.mapping).map(([key, value]) => {
+        Object.entries(mapping).map(([key, value]) => {
           return [key, {$ref: value}]
         }),
       ),
@@ -559,7 +587,7 @@ export class SchemaNormalizer {
       return {
         ...base,
         type: "union",
-        discriminator: this.normalizeDiscriminator(discriminator),
+        discriminator: this.normalizeDiscriminator(discriminator, schemas),
         schemas,
       }
     }
