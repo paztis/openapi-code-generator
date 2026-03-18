@@ -108,3 +108,7 @@ export type t_PostValidationOptionalBody200Response = {
 export type t_PostValidationOptionalBodyRequestBody = {
   id?: string | undefined
 }
+
+export type t_RouteMatchingGetByIdParamSchema = {
+  id: string
+}
